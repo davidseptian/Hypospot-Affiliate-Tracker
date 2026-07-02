@@ -213,9 +213,38 @@
       <div id="dropZone" class="drop-zone rounded-xl p-10 text-center cursor-pointer">
         <div class="text-4xl mb-2">📁</div>
         <div class="text-gray-300">Klik atau drop file di sini</div>
-        <div class="text-xs text-gray-500 mt-1">.csv atau .xlsx</div>
+        <div class="text-xs text-gray-500 mt-1">.csv atau .xlsx — file langsung dibaca, belum dikirim ke spreadsheet</div>
         <input type="file" id="fileInput" accept=".csv,.xlsx" class="hidden" multiple>
       </div>
+      <div id="parseResult" class="mt-4 text-sm"></div>
+
+      <!-- STAGING AREA -->
+      <div id="stagingArea" class="hidden mt-5 border-t border-[#232733] pt-5">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="font-semibold text-white">Siap di-sync</div>
+            <div class="text-xs text-gray-400" id="stagingSummary"></div>
+          </div>
+          <div class="flex gap-2">
+            <button id="clearStagingBtn" class="text-xs px-3 py-2 rounded-lg border border-[#2a2e37] text-gray-400 hover:text-white">Batal</button>
+            <button id="syncBtn" class="text-sm px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-black font-semibold">🔄 Sync ke Spreadsheet</button>
+          </div>
+        </div>
+        <div class="max-h-64 overflow-y-auto rounded-lg border border-[#232733]">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-left text-gray-400 bg-[#12151b]">
+                <th class="py-2 px-3">Platform</th>
+                <th class="py-2 px-3">Username</th>
+                <th class="py-2 px-3 text-right">GMV</th>
+                <th class="py-2 px-3 text-right">Terjual</th>
+              </tr>
+            </thead>
+            <tbody id="stagingPreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div id="uploadProgress" class="hidden mt-4">
         <div class="flex items-center gap-3 mb-2">
           <div class="spinner"></div>
@@ -474,28 +503,85 @@ dropZone.addEventListener('drop', (e) => {
 });
 fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
+// stagedRecords: Map by ID so re-parsing the same file or uploading multiple
+// files that share an affiliate ID just overwrites in-place (no duplicates)
+let stagedRecords = new Map();
+
 async function handleFiles(fileList) {
   const files = Array.from(fileList);
   if (!files.length) return;
-  const resultEl = document.getElementById('uploadResult');
-  resultEl.innerHTML = '';
+  const parseResultEl = document.getElementById('parseResult');
+  parseResultEl.innerHTML = '';
 
   for (const file of files) {
     try {
       const records = await parseFile(file);
       if (!records.length) {
-        resultEl.innerHTML += `<div class="text-yellow-400 mb-1">⚠️ ${esc(file.name)}: tidak ada baris terbaca atau format tidak dikenali.</div>`;
+        parseResultEl.innerHTML += `<div class="text-yellow-400 mb-1">⚠️ ${esc(file.name)}: tidak ada baris terbaca atau format tidak dikenali.</div>`;
         continue;
       }
-      await uploadRecords(records, file.name);
-      resultEl.innerHTML += `<div class="text-green-400 mb-1">✅ ${esc(file.name)}: ${records.length} affiliate ter-update.</div>`;
+      records.forEach(r => stagedRecords.set(r.ID, r));
+      parseResultEl.innerHTML += `<div class="text-green-400 mb-1">✅ ${esc(file.name)}: ${records.length} baris terbaca.</div>`;
     } catch (err) {
-      resultEl.innerHTML += `<div class="text-red-400 mb-1">❌ ${esc(file.name)}: ${esc(err.message)}</div>`;
+      parseResultEl.innerHTML += `<div class="text-red-400 mb-1">❌ ${esc(file.name)}: ${esc(err.message)}</div>`;
     }
   }
   fileInput.value = '';
-  await loadData();
+  renderStaging();
 }
+
+function renderStaging() {
+  const area = document.getElementById('stagingArea');
+  const body = document.getElementById('stagingPreviewBody');
+  const summary = document.getElementById('stagingSummary');
+  const all = Array.from(stagedRecords.values());
+
+  if (!all.length) {
+    area.classList.add('hidden');
+    return;
+  }
+  area.classList.remove('hidden');
+
+  const byPlatform = {};
+  all.forEach(r => { byPlatform[r.Platform] = (byPlatform[r.Platform] || 0) + 1; });
+  summary.textContent = `${all.length} affiliate — ` + Object.entries(byPlatform).map(([p, c]) => `${p}: ${c}`).join(', ');
+
+  const preview = all.slice(0, 200); // keep DOM light; syncing still uses the full set
+  body.innerHTML = preview.map(a => `
+    <tr class="border-b border-[#1c2029]">
+      <td class="py-1.5 px-3 text-gray-300">${esc(a.Platform)}</td>
+      <td class="py-1.5 px-3 text-gray-300">${esc(a.Username)}</td>
+      <td class="py-1.5 px-3 text-right text-gray-300">${fmtRupiah(a.GMV)}</td>
+      <td class="py-1.5 px-3 text-right text-gray-300">${fmtNum(a.TotalTerjual)}</td>
+    </tr>`).join('');
+  if (all.length > preview.length) {
+    body.innerHTML += `<tr><td colspan="4" class="py-1.5 px-3 text-gray-500 text-center">+ ${all.length - preview.length} baris lainnya...</td></tr>`;
+  }
+}
+
+document.getElementById('clearStagingBtn').addEventListener('click', () => {
+  stagedRecords.clear();
+  document.getElementById('parseResult').innerHTML = '';
+  document.getElementById('uploadResult').innerHTML = '';
+  renderStaging();
+});
+
+document.getElementById('syncBtn').addEventListener('click', async () => {
+  const records = Array.from(stagedRecords.values());
+  if (!records.length) return;
+  const resultEl = document.getElementById('uploadResult');
+  resultEl.innerHTML = '';
+  try {
+    await uploadRecords(records, `${records.length} affiliate`);
+    resultEl.innerHTML = `<div class="text-green-400">✅ Sync selesai: ${records.length} affiliate ter-update di spreadsheet.</div>`;
+    stagedRecords.clear();
+    document.getElementById('parseResult').innerHTML = '';
+    renderStaging();
+    await loadData();
+  } catch (err) {
+    resultEl.innerHTML = `<div class="text-red-400">❌ Sync gagal: ${esc(err.message)}</div>`;
+  }
+});
 
 function parseFile(file) {
   const ext = file.name.split('.').pop().toLowerCase();
@@ -584,7 +670,7 @@ function mapTokopediaRows(rows) {
 }
 
 async function uploadRecords(records, fileName) {
-  const BATCH_SIZE = 8;
+  const BATCH_SIZE = 4;
   const progressWrap = document.getElementById('uploadProgress');
   const progressBar = document.getElementById('uploadProgressBar');
   const statusText = document.getElementById('uploadStatusText');
@@ -596,7 +682,7 @@ async function uploadRecords(records, fileName) {
   }
 
   for (let i = 0; i < batches.length; i++) {
-    statusText.textContent = `Upload ${fileName}: batch ${i + 1}/${batches.length}...`;
+    statusText.textContent = `Sync ${fileName}: batch ${i + 1}/${batches.length}...`;
     progressBar.style.width = Math.round(((i + 1) / batches.length) * 100) + '%';
     const res = await jsonp({ action: 'bulkUpsert', data: JSON.stringify(batches[i]) });
     if (!res.ok) throw new Error(res.error || 'Upload gagal');
