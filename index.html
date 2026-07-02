@@ -530,6 +530,27 @@ async function handleFiles(fileList) {
   renderStaging();
 }
 
+// Bandingkan field numerik penting untuk menentukan apakah record berubah
+// dibanding data yang sudah ada di spreadsheet (hasil loadData() terakhir).
+const DIFF_FIELDS = ['GMV', 'TotalTerjual', 'TotalDipromokan', 'TotalShowcase', 'TotalVideo', 'Followers', 'Komisi'];
+
+function splitChangedVsSame(records) {
+  const existingById = new Map(affiliates.map(a => [a.ID, a]));
+  const changed = [];
+  const unchanged = [];
+  records.forEach(rec => {
+    const existing = existingById.get(rec.ID);
+    if (!existing) { changed.push(rec); return; } // affiliate baru, pasti perlu di-sync
+    const isDiff = DIFF_FIELDS.some(f => {
+      const a = existing[f] === '' || existing[f] === undefined ? 0 : Number(existing[f]);
+      const b = rec[f] === '' || rec[f] === undefined ? 0 : Number(rec[f]);
+      return a !== b;
+    });
+    if (isDiff) changed.push(rec); else unchanged.push(rec);
+  });
+  return { changed, unchanged };
+}
+
 function renderStaging() {
   const area = document.getElementById('stagingArea');
   const body = document.getElementById('stagingPreviewBody');
@@ -542,20 +563,31 @@ function renderStaging() {
   }
   area.classList.remove('hidden');
 
-  const byPlatform = {};
-  all.forEach(r => { byPlatform[r.Platform] = (byPlatform[r.Platform] || 0) + 1; });
-  summary.textContent = `${all.length} affiliate — ` + Object.entries(byPlatform).map(([p, c]) => `${p}: ${c}`).join(', ');
+  const { changed, unchanged } = splitChangedVsSame(all);
 
-  const preview = all.slice(0, 200); // keep DOM light; syncing still uses the full set
+  const byPlatform = {};
+  changed.forEach(r => { byPlatform[r.Platform] = (byPlatform[r.Platform] || 0) + 1; });
+  const platformSummary = Object.entries(byPlatform).map(([p, c]) => `${p}: ${c}`).join(', ') || '-';
+
+  summary.innerHTML = `<b class="text-orange-400">${changed.length}</b> perlu di-sync (${platformSummary})` +
+    (unchanged.length ? ` — <span class="text-gray-500">${unchanged.length} dilewati, datanya sudah sama persis</span>` : '');
+
+  const syncBtn = document.getElementById('syncBtn');
+  syncBtn.disabled = changed.length === 0;
+  syncBtn.textContent = changed.length ? `🔄 Sync ${changed.length} Affiliate` : '✅ Semua Sudah Up To Date';
+  syncBtn.classList.toggle('opacity-50', changed.length === 0);
+  syncBtn.classList.toggle('cursor-not-allowed', changed.length === 0);
+
+  const preview = changed.slice(0, 200); // hanya tampilkan yang akan disync; yang dilewati tidak perlu ditinjau
   body.innerHTML = preview.map(a => `
     <tr class="border-b border-[#1c2029]">
       <td class="py-1.5 px-3 text-gray-300">${esc(a.Platform)}</td>
       <td class="py-1.5 px-3 text-gray-300">${esc(a.Username)}</td>
       <td class="py-1.5 px-3 text-right text-gray-300">${fmtRupiah(a.GMV)}</td>
       <td class="py-1.5 px-3 text-right text-gray-300">${fmtNum(a.TotalTerjual)}</td>
-    </tr>`).join('');
-  if (all.length > preview.length) {
-    body.innerHTML += `<tr><td colspan="4" class="py-1.5 px-3 text-gray-500 text-center">+ ${all.length - preview.length} baris lainnya...</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="4" class="py-3 px-3 text-gray-500 text-center">Tidak ada baris yang perlu di-sync.</td></tr>`;
+  if (changed.length > preview.length) {
+    body.innerHTML += `<tr><td colspan="4" class="py-1.5 px-3 text-gray-500 text-center">+ ${changed.length - preview.length} baris lainnya...</td></tr>`;
   }
 }
 
@@ -567,13 +599,16 @@ document.getElementById('clearStagingBtn').addEventListener('click', () => {
 });
 
 document.getElementById('syncBtn').addEventListener('click', async () => {
-  const records = Array.from(stagedRecords.values());
-  if (!records.length) return;
+  const all = Array.from(stagedRecords.values());
+  if (!all.length) return;
+  const { changed } = splitChangedVsSame(all);
+  if (!changed.length) return; // tombol sudah disabled, ini jaga-jaga saja
+
   const resultEl = document.getElementById('uploadResult');
   resultEl.innerHTML = '';
   try {
-    await uploadRecords(records, `${records.length} affiliate`);
-    resultEl.innerHTML = `<div class="text-green-400">✅ Sync selesai: ${records.length} affiliate ter-update di spreadsheet.</div>`;
+    await uploadRecords(changed, `${changed.length} affiliate`);
+    resultEl.innerHTML = `<div class="text-green-400">✅ Sync selesai: ${changed.length} affiliate ter-update di spreadsheet.</div>`;
     stagedRecords.clear();
     document.getElementById('parseResult').innerHTML = '';
     renderStaging();
@@ -685,7 +720,7 @@ async function jsonpWithRetry(params, retries = 3) {
 }
 
 async function uploadRecords(records, fileName) {
-  const BATCH_SIZE = 30;
+  const BATCH_SIZE = 15;
   const DELAY_BETWEEN_BATCHES_MS = 350;
   const progressWrap = document.getElementById('uploadProgress');
   const progressBar = document.getElementById('uploadProgressBar');
