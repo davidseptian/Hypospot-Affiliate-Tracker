@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hypospot Affiliate Tracking</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background:#0f1115; color:#e5e7eb; }
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb { background:#2a2e37; border-radius:4px; }
+  .tab-btn { transition: all .15s ease; }
+  .tab-btn.active { background:#f97316; color:#0f1115; font-weight:600; }
+  .card { background:#161a21; border:1px solid #232733; border-radius:12px; }
+  .badge-shopee { background:#fb641b22; color:#fb641b; border:1px solid #fb641b55; }
+  .badge-tokopedia { background:#03ac0e22; color:#22c55e; border:1px solid #22c55e55; }
+  .badge-manual { background:#8b5cf622; color:#a78bfa; border:1px solid #a78bfa55; }
+  input[type=text], input[type=number], select {
+    background:#0f1115; border:1px solid #2a2e37; color:#e5e7eb; border-radius:8px; padding:6px 10px;
+  }
+  input:focus, select:focus { outline:none; border-color:#f97316; }
+  table { border-collapse: separate; border-spacing:0; }
+  th { position: sticky; top:0; background:#161a21; z-index:5; }
+  .rank-1 { color:#facc15; } .rank-2 { color:#d1d5db; } .rank-3 { color:#f97316; }
+  .drop-zone { border:2px dashed #2a2e37; transition: all .15s; }
+  .drop-zone.drag-over { border-color:#f97316; background:#f9731611; }
+  .fu-input { min-width:180px; }
+  .spinner { border: 3px solid #2a2e37; border-top-color:#f97316; border-radius:50%; width:20px; height:20px; animation:spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .toast { position:fixed; bottom:20px; right:20px; background:#161a21; border:1px solid #2a2e37; padding:12px 18px; border-radius:10px; z-index:50; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+</style>
+</head>
+<body>
+
+<div class="max-w-7xl mx-auto px-4 py-6">
+
+  <!-- HEADER -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Hypospot Affiliate Tracking</h1>
+      <p class="text-sm text-gray-400">Tracking performa affiliate Shopee & Tokopedia</p>
+    </div>
+    <div id="lastSync" class="text-xs text-gray-500"></div>
+  </div>
+
+  <!-- TABS -->
+  <div class="flex gap-2 mb-6 overflow-x-auto pb-1">
+    <button class="tab-btn active px-4 py-2 rounded-lg text-sm bg-[#161a21] border border-[#232733] whitespace-nowrap" data-tab="dashboard">📊 Dashboard</button>
+    <button class="tab-btn px-4 py-2 rounded-lg text-sm bg-[#161a21] border border-[#232733] whitespace-nowrap" data-tab="table">📋 Semua Affiliate</button>
+    <button class="tab-btn px-4 py-2 rounded-lg text-sm bg-[#161a21] border border-[#232733] whitespace-nowrap" data-tab="manual">➕ Tambah Manual</button>
+    <button class="tab-btn px-4 py-2 rounded-lg text-sm bg-[#161a21] border border-[#232733] whitespace-nowrap" data-tab="upload">📤 Upload Data</button>
+  </div>
+
+  <div id="loadingBanner" class="hidden card p-4 mb-4 flex items-center gap-3">
+    <div class="spinner"></div>
+    <span class="text-sm text-gray-300" id="loadingText">Memuat data...</span>
+  </div>
+
+  <!-- ============ DASHBOARD TAB ============ -->
+  <div id="tab-dashboard" class="tab-content">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div class="card p-4">
+        <div class="text-xs text-gray-400 mb-1">Total GMV</div>
+        <div class="text-xl font-bold text-white" id="statTotalGmv">-</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-gray-400 mb-1">Total Affiliate</div>
+        <div class="text-xl font-bold text-white" id="statTotalAffiliate">-</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-gray-400 mb-1">GMV Shopee</div>
+        <div class="text-xl font-bold" style="color:#fb641b" id="statGmvShopee">-</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs text-gray-400 mb-1">GMV Tokopedia</div>
+        <div class="text-xl font-bold" style="color:#22c55e" id="statGmvTokped">-</div>
+      </div>
+    </div>
+
+    <div class="card p-4">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold text-white">🏆 Top 20 Affiliate (Semua Platform)</h2>
+        <span class="text-xs text-gray-500">Diurutkan berdasarkan GMV</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-gray-400 border-b border-[#232733]">
+              <th class="py-2 pr-2">#</th>
+              <th class="py-2 pr-2">Platform</th>
+              <th class="py-2 pr-2">Username</th>
+              <th class="py-2 pr-2">Nama</th>
+              <th class="py-2 pr-2 text-right">GMV</th>
+              <th class="py-2 pr-2 text-right">Terjual</th>
+              <th class="py-2 pr-2 text-right">Dipromokan</th>
+              <th class="py-2 pr-2 text-right">Showcase</th>
+              <th class="py-2 pr-2 text-right">Video</th>
+            </tr>
+          </thead>
+          <tbody id="top20Body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TABLE TAB ============ -->
+  <div id="tab-table" class="tab-content hidden">
+    <div class="card p-4 mb-4 flex flex-wrap gap-3 items-center">
+      <input type="text" id="searchInput" placeholder="Cari username / nama..." class="flex-1 min-w-[200px]">
+      <select id="platformFilter">
+        <option value="">Semua Platform</option>
+        <option value="Shopee">Shopee</option>
+        <option value="Tokopedia">Tokopedia</option>
+      </select>
+      <select id="sortBy">
+        <option value="gmv_desc">GMV Tertinggi</option>
+        <option value="gmv_asc">GMV Terendah</option>
+        <option value="terjual_desc">Terjual Terbanyak</option>
+        <option value="name_asc">Nama A-Z</option>
+      </select>
+      <span class="text-xs text-gray-500" id="tableCount"></span>
+    </div>
+    <div class="card overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-gray-400 border-b border-[#232733]">
+            <th class="py-3 px-3">Platform</th>
+            <th class="py-3 px-3">Username</th>
+            <th class="py-3 px-3">Nama</th>
+            <th class="py-3 px-3 text-right">GMV</th>
+            <th class="py-3 px-3 text-right">Terjual</th>
+            <th class="py-3 px-3 text-right">Dipromokan</th>
+            <th class="py-3 px-3 text-right">Showcase</th>
+            <th class="py-3 px-3 text-right">Video</th>
+            <th class="py-3 px-3">Follow Up</th>
+            <th class="py-3 px-3"></th>
+          </tr>
+        </thead>
+        <tbody id="fullTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============ MANUAL ADD TAB ============ -->
+  <div id="tab-manual" class="tab-content hidden">
+    <div class="card p-6 max-w-xl">
+      <h2 class="font-semibold text-white mb-4">➕ Tambah Affiliate Manual</h2>
+      <p class="text-sm text-gray-400 mb-4">Buat entry affiliate yang sudah kamu rekrut sendiri (belum tentu muncul di data tarikan export).</p>
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Platform</label>
+          <select id="m_platform" class="w-full">
+            <option value="Shopee">Shopee</option>
+            <option value="Tokopedia">Tokopedia</option>
+            <option value="TikTok">TikTok</option>
+            <option value="Lainnya">Lainnya</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Username *</label>
+          <input type="text" id="m_username" class="w-full" placeholder="contoh: budi.shop">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Nama Affiliate</label>
+          <input type="text" id="m_nama" class="w-full" placeholder="Nama tampilan (opsional)">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">GMV (Rp)</label>
+            <input type="number" id="m_gmv" class="w-full" value="0">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Total Terjual</label>
+            <input type="number" id="m_terjual" class="w-full" value="0">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Produk Dipromokan</label>
+            <input type="number" id="m_dipromokan" class="w-full" value="0">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Showcase</label>
+            <input type="number" id="m_showcase" class="w-full" value="0">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Video Dibuat</label>
+            <input type="number" id="m_video" class="w-full" value="0">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Followers</label>
+            <input type="number" id="m_followers" class="w-full" value="0">
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Catatan Follow Up (opsional)</label>
+          <input type="text" id="m_followup" class="w-full" placeholder="misal: sudah DM tanggal 1 Juli">
+        </div>
+        <button id="m_submit" class="w-full bg-orange-500 hover:bg-orange-600 text-black font-semibold py-2.5 rounded-lg mt-2">Simpan Affiliate</button>
+        <div id="m_status" class="text-sm mt-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ UPLOAD TAB ============ -->
+  <div id="tab-upload" class="tab-content hidden">
+    <div class="card p-6">
+      <h2 class="font-semibold text-white mb-2">📤 Upload Hasil Tarikan</h2>
+      <p class="text-sm text-gray-400 mb-4">
+        Drag & drop atau pilih file hasil export affiliate (.csv untuk Shopee "AMS Affiliate Performance", .xlsx untuk Tokopedia "Creator List").
+        Data yang sudah ada akan di-update (GMV, terjual, dll), catatan Follow Up kamu <b>tidak akan hilang</b>.
+      </p>
+      <div id="dropZone" class="drop-zone rounded-xl p-10 text-center cursor-pointer">
+        <div class="text-4xl mb-2">📁</div>
+        <div class="text-gray-300">Klik atau drop file di sini</div>
+        <div class="text-xs text-gray-500 mt-1">.csv atau .xlsx</div>
+        <input type="file" id="fileInput" accept=".csv,.xlsx" class="hidden" multiple>
+      </div>
+      <div id="uploadProgress" class="hidden mt-4">
+        <div class="flex items-center gap-3 mb-2">
+          <div class="spinner"></div>
+          <span class="text-sm text-gray-300" id="uploadStatusText">Memproses...</span>
+        </div>
+        <div class="w-full bg-[#232733] rounded-full h-2">
+          <div id="uploadProgressBar" class="bg-orange-500 h-2 rounded-full" style="width:0%"></div>
+        </div>
+      </div>
+      <div id="uploadResult" class="mt-4 text-sm"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============ CONFIG ============
+// GANTI dengan Web App URL hasil deploy Apps Script kamu
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwEJBc3QbDBVr-TkbQ3MyuZQbZDnL0-YutwMq_iBwFvhra3s_CBANFubETjvhdYwLqTDg/exec';
+
+// ============ STATE ============
+let affiliates = [];
+
+// ============ JSONP HELPER ============
+function jsonp(params) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+    const script = document.createElement('script');
+    window[cbName] = (data) => {
+      resolve(data);
+      delete window[cbName];
+      script.remove();
+    };
+    const qs = new URLSearchParams({ ...params, callback: cbName }).toString();
+    script.src = `${APPS_SCRIPT_URL}?${qs}`;
+    script.onerror = () => reject(new Error('Gagal menghubungi Apps Script'));
+    document.body.appendChild(script);
+  });
+}
+
+// ============ FORMATTERS ============
+function fmtRupiah(n) {
+  n = Number(n) || 0;
+  return 'Rp' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
+}
+function fmtNum(n) {
+  n = Number(n) || 0;
+  return n.toLocaleString('id-ID');
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// ============ TABS ============
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+  });
+});
+
+// ============ LOAD DATA ============
+async function loadData() {
+  document.getElementById('loadingBanner').classList.remove('hidden');
+  document.getElementById('loadingText').textContent = 'Memuat data affiliate...';
+  try {
+    const res = await jsonp({ action: 'list' });
+    if (res.ok) {
+      affiliates = res.data;
+      renderAll();
+      document.getElementById('lastSync').textContent = 'Terakhir sync: ' + new Date().toLocaleString('id-ID');
+    } else {
+      showToast('Gagal memuat data: ' + res.error, true);
+    }
+  } catch (err) {
+    showToast('Error koneksi ke Apps Script. Cek APPS_SCRIPT_URL sudah diisi.', true);
+  }
+  document.getElementById('loadingBanner').classList.add('hidden');
+}
+
+function renderAll() {
+  renderDashboard();
+  renderTable();
+}
+
+// ============ DASHBOARD ============
+function renderDashboard() {
+  const totalGmv = affiliates.reduce((s, a) => s + (Number(a.GMV) || 0), 0);
+  const gmvShopee = affiliates.filter(a => a.Platform === 'Shopee').reduce((s, a) => s + (Number(a.GMV) || 0), 0);
+  const gmvTokped = affiliates.filter(a => a.Platform === 'Tokopedia').reduce((s, a) => s + (Number(a.GMV) || 0), 0);
+
+  document.getElementById('statTotalGmv').textContent = fmtRupiah(totalGmv);
+  document.getElementById('statTotalAffiliate').textContent = fmtNum(affiliates.length);
+  document.getElementById('statGmvShopee').textContent = fmtRupiah(gmvShopee);
+  document.getElementById('statGmvTokped').textContent = fmtRupiah(gmvTokped);
+
+  const top20 = [...affiliates].sort((a, b) => (Number(b.GMV) || 0) - (Number(a.GMV) || 0)).slice(0, 20);
+  const body = document.getElementById('top20Body');
+  body.innerHTML = top20.map((a, i) => {
+    const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : '';
+    const badge = a.Platform === 'Shopee' ? 'badge-shopee' : a.Platform === 'Tokopedia' ? 'badge-tokopedia' : 'badge-manual';
+    return `<tr class="border-b border-[#1c2029] hover:bg-[#1a1e26]">
+      <td class="py-2 pr-2 font-bold ${rankClass}">${i + 1}</td>
+      <td class="py-2 pr-2"><span class="text-xs px-2 py-0.5 rounded-full ${badge}">${esc(a.Platform)}</span></td>
+      <td class="py-2 pr-2 text-gray-200">${esc(a.Username)}</td>
+      <td class="py-2 pr-2 text-gray-400">${esc(a.Nama)}</td>
+      <td class="py-2 pr-2 text-right font-semibold text-white">${fmtRupiah(a.GMV)}</td>
+      <td class="py-2 pr-2 text-right text-gray-300">${fmtNum(a.TotalTerjual)}</td>
+      <td class="py-2 pr-2 text-right text-gray-300">${a.TotalDipromokan === '' || a.TotalDipromokan === undefined ? '-' : fmtNum(a.TotalDipromokan)}</td>
+      <td class="py-2 pr-2 text-right text-gray-300">${a.TotalShowcase === '' || a.TotalShowcase === undefined ? '-' : fmtNum(a.TotalShowcase)}</td>
+      <td class="py-2 pr-2 text-right text-gray-300">${a.TotalVideo === '' || a.TotalVideo === undefined ? '-' : fmtNum(a.TotalVideo)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="9" class="py-6 text-center text-gray-500">Belum ada data. Upload dulu di tab "Upload Data".</td></tr>`;
+}
+
+// ============ FULL TABLE ============
+function getFilteredSorted() {
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  const platform = document.getElementById('platformFilter').value;
+  const sortBy = document.getElementById('sortBy').value;
+
+  let rows = affiliates.filter(a => {
+    if (platform && a.Platform !== platform) return false;
+    if (q && !(String(a.Username).toLowerCase().includes(q) || String(a.Nama).toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  rows.sort((a, b) => {
+    if (sortBy === 'gmv_desc') return (Number(b.GMV) || 0) - (Number(a.GMV) || 0);
+    if (sortBy === 'gmv_asc') return (Number(a.GMV) || 0) - (Number(b.GMV) || 0);
+    if (sortBy === 'terjual_desc') return (Number(b.TotalTerjual) || 0) - (Number(a.TotalTerjual) || 0);
+    if (sortBy === 'name_asc') return String(a.Nama).localeCompare(String(b.Nama));
+    return 0;
+  });
+  return rows;
+}
+
+function renderTable() {
+  const rows = getFilteredSorted();
+  document.getElementById('tableCount').textContent = `${rows.length} affiliate`;
+  const body = document.getElementById('fullTableBody');
+  body.innerHTML = rows.map(a => {
+    const badge = a.Platform === 'Shopee' ? 'badge-shopee' : a.Platform === 'Tokopedia' ? 'badge-tokopedia' : 'badge-manual';
+    return `<tr class="border-b border-[#1c2029] hover:bg-[#1a1e26]" data-id="${esc(a.ID)}">
+      <td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded-full ${badge}">${esc(a.Platform)}</span></td>
+      <td class="py-2 px-3 text-gray-200">${esc(a.Username)}</td>
+      <td class="py-2 px-3 text-gray-400">${esc(a.Nama)}</td>
+      <td class="py-2 px-3 text-right font-medium text-white">${fmtRupiah(a.GMV)}</td>
+      <td class="py-2 px-3 text-right text-gray-300">${fmtNum(a.TotalTerjual)}</td>
+      <td class="py-2 px-3 text-right text-gray-300">${a.TotalDipromokan === '' ? '-' : fmtNum(a.TotalDipromokan)}</td>
+      <td class="py-2 px-3 text-right text-gray-300">${a.TotalShowcase === '' ? '-' : fmtNum(a.TotalShowcase)}</td>
+      <td class="py-2 px-3 text-right text-gray-300">${a.TotalVideo === '' ? '-' : fmtNum(a.TotalVideo)}</td>
+      <td class="py-2 px-3">
+        <input type="text" class="fu-input followup-input text-xs" value="${esc(a.FollowUp)}" placeholder="Tulis catatan follow up...">
+      </td>
+      <td class="py-2 px-3">
+        <button class="delete-btn text-xs text-red-400 hover:text-red-300">Hapus</button>
+      </td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="10" class="py-6 text-center text-gray-500">Tidak ada data yang cocok.</td></tr>`;
+
+  // bind follow up save on blur
+  body.querySelectorAll('.followup-input').forEach(input => {
+    input.addEventListener('blur', async (e) => {
+      const tr = e.target.closest('tr');
+      const id = tr.dataset.id;
+      const note = e.target.value;
+      const affRow = affiliates.find(a => a.ID === id);
+      if (affRow) affRow.FollowUp = note;
+      try {
+        await jsonp({ action: 'updateFollowUp', id, note });
+        showToast('Follow up tersimpan');
+      } catch {
+        showToast('Gagal simpan follow up', true);
+      }
+    });
+  });
+
+  body.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const tr = e.target.closest('tr');
+      const id = tr.dataset.id;
+      if (!confirm('Hapus affiliate ini dari tracking?')) return;
+      try {
+        await jsonp({ action: 'deleteAffiliate', id });
+        affiliates = affiliates.filter(a => a.ID !== id);
+        renderAll();
+        showToast('Affiliate dihapus');
+      } catch {
+        showToast('Gagal hapus affiliate', true);
+      }
+    });
+  });
+}
+
+document.getElementById('searchInput').addEventListener('input', renderTable);
+document.getElementById('platformFilter').addEventListener('change', renderTable);
+document.getElementById('sortBy').addEventListener('change', renderTable);
+
+// ============ MANUAL ADD ============
+document.getElementById('m_submit').addEventListener('click', async () => {
+  const username = document.getElementById('m_username').value.trim();
+  const statusEl = document.getElementById('m_status');
+  if (!username) {
+    statusEl.textContent = 'Username wajib diisi.';
+    statusEl.className = 'text-sm mt-2 text-red-400';
+    return;
+  }
+  const platform = document.getElementById('m_platform').value;
+  const rec = {
+    ID: platform.substring(0, 2).toUpperCase() + '-MANUAL-' + username,
+    Platform: platform,
+    Username: username,
+    Nama: document.getElementById('m_nama').value.trim() || username,
+    GMV: Number(document.getElementById('m_gmv').value) || 0,
+    TotalTerjual: Number(document.getElementById('m_terjual').value) || 0,
+    TotalDipromokan: Number(document.getElementById('m_dipromokan').value) || 0,
+    TotalShowcase: Number(document.getElementById('m_showcase').value) || 0,
+    TotalVideo: Number(document.getElementById('m_video').value) || 0,
+    Followers: Number(document.getElementById('m_followers').value) || 0,
+    Komisi: 0,
+    FollowUp: document.getElementById('m_followup').value.trim(),
+    Source: 'Manual'
+  };
+
+  statusEl.textContent = 'Menyimpan...';
+  statusEl.className = 'text-sm mt-2 text-gray-400';
+  try {
+    await jsonp({ action: 'upsertManual', data: JSON.stringify(rec) });
+    statusEl.textContent = '✅ Affiliate berhasil ditambahkan!';
+    statusEl.className = 'text-sm mt-2 text-green-400';
+    ['m_username','m_nama','m_gmv','m_terjual','m_dipromokan','m_showcase','m_video','m_followers','m_followup'].forEach(id => {
+      const el = document.getElementById(id);
+      el.value = id.startsWith('m_') && ['m_gmv','m_terjual','m_dipromokan','m_showcase','m_video','m_followers'].includes(id) ? 0 : '';
+    });
+    await loadData();
+  } catch (err) {
+    statusEl.textContent = 'Gagal menyimpan: ' + err.message;
+    statusEl.className = 'text-sm mt-2 text-red-400';
+  }
+});
+
+// ============ UPLOAD & PARSE ============
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+async function handleFiles(fileList) {
+  const files = Array.from(fileList);
+  if (!files.length) return;
+  const resultEl = document.getElementById('uploadResult');
+  resultEl.innerHTML = '';
+
+  for (const file of files) {
+    try {
+      const records = await parseFile(file);
+      if (!records.length) {
+        resultEl.innerHTML += `<div class="text-yellow-400 mb-1">⚠️ ${esc(file.name)}: tidak ada baris terbaca atau format tidak dikenali.</div>`;
+        continue;
+      }
+      await uploadRecords(records, file.name);
+      resultEl.innerHTML += `<div class="text-green-400 mb-1">✅ ${esc(file.name)}: ${records.length} affiliate ter-update.</div>`;
+    } catch (err) {
+      resultEl.innerHTML += `<div class="text-red-400 mb-1">❌ ${esc(file.name)}: ${esc(err.message)}</div>`;
+    }
+  }
+  fileInput.value = '';
+  await loadData();
+}
+
+function parseFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'csv') return parseCsv(file);
+  if (ext === 'xlsx' || ext === 'xls') return parseXlsx(file);
+  return Promise.reject(new Error('Format file tidak didukung'));
+}
+
+function parseCsv(file) {
+  return new Promise((resolve, reject) => {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      encoding: 'UTF-8',
+      complete: (res) => {
+        try { resolve(mapShopeeRows(res.data)); }
+        catch (e) { reject(e); }
+      },
+      error: reject
+    });
+  });
+}
+
+function parseXlsx(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        resolve(mapTokopediaRows(json));
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function mapShopeeRows(rows) {
+  // Detect: must have Username Affiliate + Omzet Penjualan
+  if (!rows.length || !('Username Affiliate' in rows[0])) {
+    throw new Error('Bukan format Shopee AMS Affiliate Performance yang dikenali');
+  }
+  return rows.filter(r => r['Username Affiliate']).map(r => {
+    const username = String(r['Username Affiliate']).trim();
+    return {
+      ID: 'SP-' + username,
+      Platform: 'Shopee',
+      Username: username,
+      Nama: String(r['Nama Affiliate'] || username).trim(),
+      GMV: parseFloat(r['Omzet Penjualan(Rp)']) || 0,
+      TotalTerjual: parseFloat(r['Produk Terjual']) || 0,
+      TotalDipromokan: '',
+      TotalShowcase: '',
+      TotalVideo: '',
+      Followers: '',
+      Komisi: parseFloat(r['Estimasi Komisi(Rp)']) || 0,
+      Source: 'Upload'
+    };
+  });
+}
+
+function mapTokopediaRows(rows) {
+  if (!rows.length || !('Creator username' in rows[0])) {
+    throw new Error('Bukan format Tokopedia Creator List yang dikenali');
+  }
+  return rows.filter(r => r['Creator username']).map(r => {
+    const username = String(r['Creator username']).trim();
+    const komisi = r['Est. commission'];
+    return {
+      ID: 'TP-' + username,
+      Platform: 'Tokopedia',
+      Username: username,
+      Nama: username,
+      GMV: parseFloat(r['Affiliate GMV']) || 0,
+      TotalTerjual: parseFloat(r['Items sold']) || 0,
+      TotalDipromokan: parseFloat(r['Affiliate products sold']) || 0,
+      TotalShowcase: parseFloat(r['Affiliate product showcase']) || 0,
+      TotalVideo: parseFloat(r['Affiliate shoppable videos']) || 0,
+      Followers: parseFloat(r['Affiliate followers']) || 0,
+      Komisi: (komisi === '--' || !komisi) ? 0 : parseFloat(komisi) || 0,
+      Source: 'Upload'
+    };
+  });
+}
+
+async function uploadRecords(records, fileName) {
+  const BATCH_SIZE = 30;
+  const progressWrap = document.getElementById('uploadProgress');
+  const progressBar = document.getElementById('uploadProgressBar');
+  const statusText = document.getElementById('uploadStatusText');
+  progressWrap.classList.remove('hidden');
+
+  const batches = [];
+  for (let i = 0; i < records.length; i += BATCH_SIZE) {
+    batches.push(records.slice(i, i + BATCH_SIZE));
+  }
+
+  for (let i = 0; i < batches.length; i++) {
+    statusText.textContent = `Upload ${fileName}: batch ${i + 1}/${batches.length}...`;
+    progressBar.style.width = Math.round(((i + 1) / batches.length) * 100) + '%';
+    const res = await jsonp({ action: 'bulkUpsert', data: JSON.stringify(batches[i]) });
+    if (!res.ok) throw new Error(res.error || 'Upload gagal');
+  }
+  progressWrap.classList.add('hidden');
+}
+
+// ============ TOAST ============
+function showToast(msg, isError) {
+  const el = document.createElement('div');
+  el.className = 'toast text-sm ' + (isError ? 'text-red-400' : 'text-green-400');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ============ INIT ============
+loadData();
+</script>
+</body>
+</html>
