@@ -670,7 +670,7 @@ function mapTokopediaRows(rows) {
 }
 
 async function uploadRecords(records, fileName) {
-  const BATCH_SIZE = 4;
+  const BATCH_SIZE = 30;
   const progressWrap = document.getElementById('uploadProgress');
   const progressBar = document.getElementById('uploadProgressBar');
   const statusText = document.getElementById('uploadStatusText');
