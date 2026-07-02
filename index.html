@@ -669,8 +669,24 @@ function mapTokopediaRows(rows) {
   });
 }
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function jsonpWithRetry(params, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await jsonp(params);
+      if (!res.ok) throw new Error(res.error || 'Request gagal');
+      return res;
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await sleep(600 * attempt); // backoff: 600ms, 1200ms, 1800ms
+    }
+  }
+}
+
 async function uploadRecords(records, fileName) {
   const BATCH_SIZE = 30;
+  const DELAY_BETWEEN_BATCHES_MS = 350;
   const progressWrap = document.getElementById('uploadProgress');
   const progressBar = document.getElementById('uploadProgressBar');
   const statusText = document.getElementById('uploadStatusText');
@@ -684,8 +700,13 @@ async function uploadRecords(records, fileName) {
   for (let i = 0; i < batches.length; i++) {
     statusText.textContent = `Sync ${fileName}: batch ${i + 1}/${batches.length}...`;
     progressBar.style.width = Math.round(((i + 1) / batches.length) * 100) + '%';
-    const res = await jsonp({ action: 'bulkUpsert', data: JSON.stringify(batches[i]) });
-    if (!res.ok) throw new Error(res.error || 'Upload gagal');
+    try {
+      await jsonpWithRetry({ action: 'bulkUpsert', data: JSON.stringify(batches[i]) });
+    } catch (err) {
+      progressWrap.classList.add('hidden');
+      throw new Error(`Gagal di batch ${i + 1}/${batches.length} (${err.message}). Data yang sudah ke-sync aman, tinggal klik Sync lagi untuk lanjutkan sisanya.`);
+    }
+    if (i < batches.length - 1) await sleep(DELAY_BETWEEN_BATCHES_MS);
   }
   progressWrap.classList.add('hidden');
 }
