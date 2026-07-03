@@ -309,20 +309,60 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 // ============ LOAD DATA ============
+const CACHE_KEY = 'hypospot_affiliate_cache_v1';
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveCache(data) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ data, savedAt: Date.now() }));
+  } catch {
+    // storage penuh/di-block browser — abaikan saja, tidak fatal
+  }
+}
+
 async function loadData() {
-  document.getElementById('loadingBanner').classList.remove('hidden');
-  document.getElementById('loadingText').textContent = 'Memuat data affiliate...';
+  const cached = loadCache();
+
+  // 1) Tampilkan data cache dulu (kalau ada) biar dashboard langsung keisi, tanpa nunggu
+  if (cached && cached.data && cached.data.length) {
+    affiliates = cached.data;
+    renderAll();
+    const cachedTime = new Date(cached.savedAt).toLocaleString('id-ID');
+    document.getElementById('lastSync').textContent = `Menampilkan data cache (${cachedTime}) — sedang update...`;
+    document.getElementById('loadingBanner').classList.add('hidden');
+  } else {
+    document.getElementById('loadingBanner').classList.remove('hidden');
+    document.getElementById('loadingText').textContent = 'Memuat data affiliate...';
+  }
+
+  // 2) Tetap fetch data terbaru dari spreadsheet di background
   try {
     const res = await jsonp({ action: 'list' });
     if (res.ok) {
       affiliates = res.data;
       renderAll();
+      saveCache(res.data);
       document.getElementById('lastSync').textContent = 'Terakhir sync: ' + new Date().toLocaleString('id-ID');
     } else {
       showToast('Gagal memuat data: ' + res.error, true);
+      if (cached) document.getElementById('lastSync').textContent = 'Gagal update, menampilkan data cache lama';
     }
   } catch (err) {
-    showToast('Error koneksi ke Apps Script. Cek APPS_SCRIPT_URL sudah diisi.', true);
+    if (cached) {
+      showToast('Gagal update dari spreadsheet, masih menampilkan data cache', true);
+      document.getElementById('lastSync').textContent = 'Gagal update, menampilkan data cache lama';
+    } else {
+      showToast('Error koneksi ke Apps Script. Cek APPS_SCRIPT_URL sudah diisi.', true);
+    }
   }
   document.getElementById('loadingBanner').classList.add('hidden');
 }
@@ -418,6 +458,7 @@ function renderTable() {
       if (affRow) affRow.FollowUp = note;
       try {
         await jsonp({ action: 'updateFollowUp', id, note });
+        saveCache(affiliates);
         showToast('Follow up tersimpan');
       } catch {
         showToast('Gagal simpan follow up', true);
@@ -433,6 +474,7 @@ function renderTable() {
       try {
         await jsonp({ action: 'deleteAffiliate', id });
         affiliates = affiliates.filter(a => a.ID !== id);
+        saveCache(affiliates);
         renderAll();
         showToast('Affiliate dihapus');
       } catch {
