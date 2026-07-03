@@ -30,6 +30,25 @@
   .spinner { border: 3px solid #2a2e37; border-top-color:#f97316; border-radius:50%; width:20px; height:20px; animation:spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .toast { position:fixed; bottom:20px; right:20px; background:#161a21; border:1px solid #2a2e37; padding:12px 18px; border-radius:10px; z-index:50; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+  .tier-platinum { background:#a78bfa22; color:#c4b5fd; border:1px solid #a78bfa55; }
+  .tier-gold { background:#facc1522; color:#facc15; border:1px solid #facc1555; }
+  .tier-silver { background:#9ca3af22; color:#d1d5db; border:1px solid #9ca3af55; }
+  .tier-bronze { background:#f9731622; color:#fb923c; border:1px solid #f9731655; }
+  .tier-none { background:#37415122; color:#6b7280; border:1px solid #37415155; }
+  .trend-up { color:#22c55e; }
+  .trend-down { color:#f87171; }
+  .row-clickable { cursor:pointer; }
+  .row-clickable:hover { background:#1a1e26; }
+  #detailOverlay { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:40; opacity:0; pointer-events:none; transition:opacity .2s; }
+  #detailOverlay.open { opacity:1; pointer-events:auto; }
+  #detailPanel { position:fixed; top:0; right:0; height:100%; width:100%; max-width:460px;
+    background:#12151b; border-left:1px solid #232733; z-index:41; transform:translateX(100%);
+    transition:transform .25s ease; overflow-y:auto; }
+  #detailPanel.open { transform:translateX(0); }
+  .log-entry { border-left:2px solid #2a2e37; padding-left:12px; margin-left:4px; }
+  .history-bar { background:#f97316; border-radius:3px 3px 0 0; min-height:2px; }
+  textarea { background:#0f1115; border:1px solid #2a2e37; color:#e5e7eb; border-radius:8px; padding:8px 10px; width:100%; }
+  textarea:focus { outline:none; border-color:#f97316; }
 </style>
 </head>
 <body>
@@ -79,6 +98,24 @@
       </div>
     </div>
 
+    <div class="card p-4 mb-6">
+      <h2 class="font-semibold text-white mb-3">🎖️ Distribusi Tier Affiliate</h2>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3" id="tierDistribution"></div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div class="card p-4">
+        <h2 class="font-semibold text-white mb-1">🔥 Naik Daun</h2>
+        <p class="text-xs text-gray-500 mb-3">GMV naik signifikan dibanding bulan lalu</p>
+        <div id="risingList" class="space-y-2 text-sm"></div>
+      </div>
+      <div class="card p-4">
+        <h2 class="font-semibold text-white mb-1">⚠️ Mulai Sepi</h2>
+        <p class="text-xs text-gray-500 mb-3">GMV turun signifikan dibanding bulan lalu</p>
+        <div id="decliningList" class="space-y-2 text-sm"></div>
+      </div>
+    </div>
+
     <div class="card p-4">
       <div class="flex items-center justify-between mb-4">
         <h2 class="font-semibold text-white">🏆 Top 20 Affiliate (Semua Platform)</h2>
@@ -114,12 +151,25 @@
         <option value="Shopee">Shopee</option>
         <option value="Tokopedia">Tokopedia</option>
       </select>
+      <select id="tierFilter">
+        <option value="">Semua Tier</option>
+        <option value="Platinum">🟣 Platinum</option>
+        <option value="Gold">🟡 Gold</option>
+        <option value="Silver">⚪ Silver</option>
+        <option value="Bronze">🟠 Bronze</option>
+        <option value="None">Belum Ada Penjualan</option>
+      </select>
       <select id="sortBy">
         <option value="gmv_desc">GMV Tertinggi</option>
         <option value="gmv_asc">GMV Terendah</option>
         <option value="terjual_desc">Terjual Terbanyak</option>
         <option value="name_asc">Nama A-Z</option>
       </select>
+      <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+        <input type="checkbox" id="needFollowUpFilter" class="w-4 h-4">
+        Perlu Follow Up
+      </label>
+      <button id="exportBtn" class="text-xs px-3 py-2 rounded-lg border border-[#2a2e37] text-gray-300 hover:text-white hover:border-orange-500">📥 Export Excel</button>
       <span class="text-xs text-gray-500" id="tableCount"></span>
     </div>
     <div class="card overflow-x-auto">
@@ -129,12 +179,14 @@
             <th class="py-3 px-3">Platform</th>
             <th class="py-3 px-3">Username</th>
             <th class="py-3 px-3">Nama</th>
+            <th class="py-3 px-3">Tier</th>
+            <th class="py-3 px-3">Tren</th>
             <th class="py-3 px-3 text-right">GMV</th>
             <th class="py-3 px-3 text-right">Terjual</th>
             <th class="py-3 px-3 text-right">Dipromokan</th>
             <th class="py-3 px-3 text-right">Showcase</th>
             <th class="py-3 px-3 text-right">Video</th>
-            <th class="py-3 px-3">Follow Up</th>
+            <th class="py-3 px-3">Follow Up Terakhir</th>
             <th class="py-3 px-3"></th>
           </tr>
         </thead>
@@ -260,6 +312,37 @@
 
 </div>
 
+<!-- ============ DETAIL SLIDE-IN PANEL ============ -->
+<div id="detailOverlay"></div>
+<div id="detailPanel">
+  <div class="p-5">
+    <div class="flex items-start justify-between mb-4">
+      <div>
+        <div id="detailBadge" class="mb-2"></div>
+        <h2 id="detailNama" class="text-lg font-bold text-white"></h2>
+        <div id="detailUsername" class="text-sm text-gray-400"></div>
+      </div>
+      <button id="detailCloseBtn" class="text-gray-400 hover:text-white text-xl leading-none">✕</button>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2 mb-5" id="detailStats"></div>
+
+    <div class="mb-5">
+      <h3 class="text-sm font-semibold text-gray-300 mb-2">📈 Tren GMV Bulanan</h3>
+      <div id="detailChart" class="flex items-end gap-1 h-24 bg-[#0f1115] rounded-lg p-2"></div>
+      <div id="detailChartLabels" class="flex gap-1 text-[10px] text-gray-500 mt-1"></div>
+      <div id="detailChartEmpty" class="hidden text-xs text-gray-500 mt-2">Belum cukup data histori (minimal 2 bulan) untuk lihat tren.</div>
+    </div>
+
+    <div class="mb-4">
+      <h3 class="text-sm font-semibold text-gray-300 mb-2">📝 Riwayat Aktivitas</h3>
+      <div id="detailLogList" class="space-y-3 max-h-56 overflow-y-auto mb-3"></div>
+      <textarea id="detailNewNote" rows="2" placeholder="Catat aktivitas baru, misal: sudah follow up via DM, sudah kirim sample ulang, dll"></textarea>
+      <button id="detailAddLogBtn" class="w-full mt-2 bg-orange-500 hover:bg-orange-600 text-black font-semibold py-2 rounded-lg text-sm">+ Tambah Aktivitas</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ============ CONFIG ============
 // GANTI dengan Web App URL hasil deploy Apps Script kamu
@@ -267,6 +350,67 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwEJBc3QbDBVr-T
 
 // ============ STATE ============
 let affiliates = [];
+let historyData = [];   // snapshot bulanan per affiliate, dari sheet HISTORY
+let activityLogs = [];  // semua log aktivitas follow up / sample, dari sheet ACTIVITY_LOG
+let trendMap = {};      // ID -> { direction: 'up'|'down'|'flat', pct: number }
+let currentDetailId = null;
+
+// ============ TIER ============
+function computeTier(gmv) {
+  gmv = Number(gmv) || 0;
+  if (gmv <= 0) return 'None';
+  if (gmv >= 2000000) return 'Platinum';
+  if (gmv >= 500000) return 'Gold';
+  if (gmv >= 100000) return 'Silver';
+  return 'Bronze';
+}
+function tierBadgeClass(tier) {
+  return { Platinum: 'tier-platinum', Gold: 'tier-gold', Silver: 'tier-silver', Bronze: 'tier-bronze', None: 'tier-none' }[tier] || 'tier-none';
+}
+function tierEmoji(tier) {
+  return { Platinum: '🟣', Gold: '🟡', Silver: '⚪', Bronze: '🟠', None: '➖' }[tier] || '➖';
+}
+
+// ============ TREND (naik daun / mulai sepi) ============
+// Bandingkan snapshot 2 bulan terakhir yang ada di HISTORY untuk tiap affiliate.
+function buildTrendMap() {
+  trendMap = {};
+  const byId = {};
+  historyData.forEach(h => {
+    if (!byId[h.ID]) byId[h.ID] = [];
+    byId[h.ID].push(h);
+  });
+  Object.entries(byId).forEach(([id, rows]) => {
+    rows.sort((a, b) => String(a.Month).localeCompare(String(b.Month)));
+    if (rows.length < 2) return; // butuh minimal 2 bulan data buat bandingin
+    const prev = Number(rows[rows.length - 2].GMV) || 0;
+    const curr = Number(rows[rows.length - 1].GMV) || 0;
+    if (prev === 0 && curr === 0) return;
+    let pct;
+    if (prev === 0) pct = 100; // dari 0 ke ada penjualan = naik daun
+    else pct = ((curr - prev) / prev) * 100;
+    if (pct >= 50) trendMap[id] = { direction: 'up', pct };
+    else if (pct <= -50) trendMap[id] = { direction: 'down', pct };
+  });
+}
+function hasEnoughHistoryForTrend() {
+  const months = new Set(historyData.map(h => h.Month));
+  return months.size >= 2;
+}
+
+// ============ ACTIVITY LOG HELPERS ============
+function getLogsForId(id) {
+  return activityLogs.filter(l => l.AffiliateID === id).sort((a, b) => String(b.Date).localeCompare(String(a.Date)));
+}
+function getHistoryForId(id) {
+  return historyData.filter(h => h.ID === id).sort((a, b) => String(a.Month).localeCompare(String(b.Month)));
+}
+function daysAgo(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
 
 // ============ JSONP HELPER ============
 function jsonp(params) {
@@ -309,7 +453,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 // ============ LOAD DATA ============
-const CACHE_KEY = 'hypospot_affiliate_cache_v1';
+const CACHE_KEY = 'hypospot_affiliate_cache_v2';
 
 function loadCache() {
   try {
@@ -321,9 +465,11 @@ function loadCache() {
   }
 }
 
-function saveCache(data) {
+function saveCache() {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ data, savedAt: Date.now() }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      affiliates, historyData, activityLogs, savedAt: Date.now()
+    }));
   } catch {
     // storage penuh/di-block browser — abaikan saja, tidak fatal
   }
@@ -333,8 +479,11 @@ async function loadData() {
   const cached = loadCache();
 
   // 1) Tampilkan data cache dulu (kalau ada) biar dashboard langsung keisi, tanpa nunggu
-  if (cached && cached.data && cached.data.length) {
-    affiliates = cached.data;
+  if (cached && cached.affiliates && cached.affiliates.length) {
+    affiliates = cached.affiliates;
+    historyData = cached.historyData || [];
+    activityLogs = cached.activityLogs || [];
+    buildTrendMap();
     renderAll();
     const cachedTime = new Date(cached.savedAt).toLocaleString('id-ID');
     document.getElementById('lastSync').textContent = `Menampilkan data cache (${cachedTime}) — sedang update...`;
@@ -344,16 +493,23 @@ async function loadData() {
     document.getElementById('loadingText').textContent = 'Memuat data affiliate...';
   }
 
-  // 2) Tetap fetch data terbaru dari spreadsheet di background
+  // 2) Tetap fetch data terbaru dari spreadsheet di background (3 sumber sekaligus)
   try {
-    const res = await jsonp({ action: 'list' });
-    if (res.ok) {
-      affiliates = res.data;
+    const [affRes, histRes, logRes] = await Promise.all([
+      jsonp({ action: 'list' }),
+      jsonp({ action: 'listHistory' }),
+      jsonp({ action: 'listActivityLog' })
+    ]);
+    if (affRes.ok) {
+      affiliates = affRes.data;
+      historyData = histRes.ok ? histRes.data : [];
+      activityLogs = logRes.ok ? logRes.data : [];
+      buildTrendMap();
       renderAll();
-      saveCache(res.data);
+      saveCache();
       document.getElementById('lastSync').textContent = 'Terakhir sync: ' + new Date().toLocaleString('id-ID');
     } else {
-      showToast('Gagal memuat data: ' + res.error, true);
+      showToast('Gagal memuat data: ' + affRes.error, true);
       if (cached) document.getElementById('lastSync').textContent = 'Gagal update, menampilkan data cache lama';
     }
   } catch (err) {
@@ -400,17 +556,79 @@ function renderDashboard() {
       <td class="py-2 pr-2 text-right text-gray-300">${a.TotalVideo === '' || a.TotalVideo === undefined ? '-' : fmtNum(a.TotalVideo)}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="9" class="py-6 text-center text-gray-500">Belum ada data. Upload dulu di tab "Upload Data".</td></tr>`;
+
+  renderTierDistribution();
+  renderTrendLists();
+}
+
+function renderTierDistribution() {
+  const order = ['Platinum', 'Gold', 'Silver', 'Bronze', 'None'];
+  const labels = { Platinum: 'Platinum', Gold: 'Gold', Silver: 'Silver', Bronze: 'Bronze', None: 'Belum Jualan' };
+  const counts = { Platinum: 0, Gold: 0, Silver: 0, Bronze: 0, None: 0 };
+  affiliates.forEach(a => { counts[computeTier(a.GMV)]++; });
+
+  document.getElementById('tierDistribution').innerHTML = order.map(t => `
+    <div class="card p-3 text-center ${tierBadgeClass(t)}" style="background:transparent;">
+      <div class="text-2xl mb-1">${tierEmoji(t)}</div>
+      <div class="text-lg font-bold text-white">${counts[t]}</div>
+      <div class="text-xs text-gray-400">${labels[t]}</div>
+    </div>`).join('');
+}
+
+function renderTrendLists() {
+  const risingEl = document.getElementById('risingList');
+  const decliningEl = document.getElementById('decliningList');
+
+  if (!hasEnoughHistoryForTrend()) {
+    const msg = `<div class="text-gray-500 text-xs">Tren baru bisa dihitung setelah ada minimal 2 bulan data upload. Lanjutkan upload bulanan seperti biasa ya.</div>`;
+    risingEl.innerHTML = msg;
+    decliningEl.innerHTML = msg;
+    return;
+  }
+
+  const rising = Object.entries(trendMap).filter(([, t]) => t.direction === 'up')
+    .sort((a, b) => b[1].pct - a[1].pct).slice(0, 10);
+  const declining = Object.entries(trendMap).filter(([, t]) => t.direction === 'down')
+    .sort((a, b) => a[1].pct - b[1].pct).slice(0, 10);
+
+  const rowHtml = (id, trend, colorClass) => {
+    const a = affiliates.find(x => x.ID === id);
+    if (!a) return '';
+    const pctText = (trend.pct > 0 ? '+' : '') + Math.round(trend.pct) + '%';
+    return `<div class="flex items-center justify-between py-1.5 border-b border-[#1c2029] last:border-0">
+      <div>
+        <div class="text-gray-200">${esc(a.Username)}</div>
+        <div class="text-xs text-gray-500">${esc(a.Platform)}</div>
+      </div>
+      <div class="${colorClass} font-semibold">${pctText}</div>
+    </div>`;
+  };
+
+  risingEl.innerHTML = rising.length
+    ? rising.map(([id, t]) => rowHtml(id, t, 'trend-up')).join('')
+    : `<div class="text-gray-500 text-xs">Belum ada affiliate yang naik signifikan bulan ini.</div>`;
+  decliningEl.innerHTML = declining.length
+    ? declining.map(([id, t]) => rowHtml(id, t, 'trend-down')).join('')
+    : `<div class="text-gray-500 text-xs">Belum ada affiliate yang turun signifikan bulan ini.</div>`;
 }
 
 // ============ FULL TABLE ============
 function getFilteredSorted() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
   const platform = document.getElementById('platformFilter').value;
+  const tier = document.getElementById('tierFilter').value;
+  const needFollowUp = document.getElementById('needFollowUpFilter').checked;
   const sortBy = document.getElementById('sortBy').value;
 
   let rows = affiliates.filter(a => {
     if (platform && a.Platform !== platform) return false;
+    if (tier && computeTier(a.GMV) !== tier) return false;
     if (q && !(String(a.Username).toLowerCase().includes(q) || String(a.Nama).toLowerCase().includes(q))) return false;
+    if (needFollowUp) {
+      const da = daysAgo(a.LastFollowUpDate);
+      const isStale = da === null || da > 30; // belum pernah / lebih dari 30 hari
+      if (!isStale) return false;
+    }
     return true;
   });
 
@@ -430,51 +648,50 @@ function renderTable() {
   const body = document.getElementById('fullTableBody');
   body.innerHTML = rows.map(a => {
     const badge = a.Platform === 'Shopee' ? 'badge-shopee' : a.Platform === 'Tokopedia' ? 'badge-tokopedia' : 'badge-manual';
-    return `<tr class="border-b border-[#1c2029] hover:bg-[#1a1e26]" data-id="${esc(a.ID)}">
+    const tier = computeTier(a.GMV);
+    const trend = trendMap[a.ID];
+    const trendHtml = trend
+      ? `<span class="${trend.direction === 'up' ? 'trend-up' : 'trend-down'} text-xs font-semibold">${trend.direction === 'up' ? '🔥' : '⚠️'} ${trend.pct > 0 ? '+' : ''}${Math.round(trend.pct)}%</span>`
+      : `<span class="text-gray-600 text-xs">-</span>`;
+    const da = daysAgo(a.LastFollowUpDate);
+    const followUpText = a.FollowUp ? esc(a.FollowUp) : '<span class="text-gray-600">Belum ada catatan</span>';
+    const followUpMeta = da === null ? '' : `<div class="text-[10px] ${da > 30 ? 'text-red-400' : 'text-gray-500'} mt-0.5">${da} hari lalu</div>`;
+    return `<tr class="border-b border-[#1c2029] hover:bg-[#1a1e26] row-clickable" data-id="${esc(a.ID)}">
       <td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded-full ${badge}">${esc(a.Platform)}</span></td>
       <td class="py-2 px-3 text-gray-200">${esc(a.Username)}</td>
       <td class="py-2 px-3 text-gray-400">${esc(a.Nama)}</td>
+      <td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded-full ${tierBadgeClass(tier)}">${tierEmoji(tier)} ${tier}</span></td>
+      <td class="py-2 px-3">${trendHtml}</td>
       <td class="py-2 px-3 text-right font-medium text-white">${fmtRupiah(a.GMV)}</td>
       <td class="py-2 px-3 text-right text-gray-300">${fmtNum(a.TotalTerjual)}</td>
       <td class="py-2 px-3 text-right text-gray-300">${a.TotalDipromokan === '' ? '-' : fmtNum(a.TotalDipromokan)}</td>
       <td class="py-2 px-3 text-right text-gray-300">${a.TotalShowcase === '' ? '-' : fmtNum(a.TotalShowcase)}</td>
       <td class="py-2 px-3 text-right text-gray-300">${a.TotalVideo === '' ? '-' : fmtNum(a.TotalVideo)}</td>
-      <td class="py-2 px-3">
-        <input type="text" class="fu-input followup-input text-xs" value="${esc(a.FollowUp)}" placeholder="Tulis catatan follow up...">
-      </td>
+      <td class="py-2 px-3 text-xs max-w-[160px] truncate">${followUpText}${followUpMeta}</td>
       <td class="py-2 px-3">
         <button class="delete-btn text-xs text-red-400 hover:text-red-300">Hapus</button>
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="10" class="py-6 text-center text-gray-500">Tidak ada data yang cocok.</td></tr>`;
+  }).join('') || `<tr><td colspan="12" class="py-6 text-center text-gray-500">Tidak ada data yang cocok.</td></tr>`;
 
-  // bind follow up save on blur
-  body.querySelectorAll('.followup-input').forEach(input => {
-    input.addEventListener('blur', async (e) => {
-      const tr = e.target.closest('tr');
-      const id = tr.dataset.id;
-      const note = e.target.value;
-      const affRow = affiliates.find(a => a.ID === id);
-      if (affRow) affRow.FollowUp = note;
-      try {
-        await jsonp({ action: 'updateFollowUp', id, note });
-        saveCache(affiliates);
-        showToast('Follow up tersimpan');
-      } catch {
-        showToast('Gagal simpan follow up', true);
-      }
+  // klik baris (selain tombol Hapus) buka panel detail
+  body.querySelectorAll('tr[data-id]').forEach(tr => {
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('.delete-btn')) return;
+      openDetailPanel(tr.dataset.id);
     });
   });
 
   body.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const tr = e.target.closest('tr');
       const id = tr.dataset.id;
       if (!confirm('Hapus affiliate ini dari tracking?')) return;
       try {
         await jsonp({ action: 'deleteAffiliate', id });
         affiliates = affiliates.filter(a => a.ID !== id);
-        saveCache(affiliates);
+        saveCache();
         renderAll();
         showToast('Affiliate dihapus');
       } catch {
@@ -486,7 +703,131 @@ function renderTable() {
 
 document.getElementById('searchInput').addEventListener('input', renderTable);
 document.getElementById('platformFilter').addEventListener('change', renderTable);
+document.getElementById('tierFilter').addEventListener('change', renderTable);
+document.getElementById('needFollowUpFilter').addEventListener('change', renderTable);
 document.getElementById('sortBy').addEventListener('change', renderTable);
+
+// ============ EXPORT KE EXCEL ============
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const rows = getFilteredSorted().map(a => ({
+    Platform: a.Platform,
+    Username: a.Username,
+    Nama: a.Nama,
+    Tier: computeTier(a.GMV),
+    GMV: Number(a.GMV) || 0,
+    TotalTerjual: Number(a.TotalTerjual) || 0,
+    TotalDipromokan: a.TotalDipromokan === '' ? '' : Number(a.TotalDipromokan),
+    TotalShowcase: a.TotalShowcase === '' ? '' : Number(a.TotalShowcase),
+    TotalVideo: a.TotalVideo === '' ? '' : Number(a.TotalVideo),
+    Followers: a.Followers === '' ? '' : Number(a.Followers),
+    Komisi: Number(a.Komisi) || 0,
+    FollowUpTerakhir: a.FollowUp || '',
+    TanggalFollowUp: a.LastFollowUpDate || ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Affiliate');
+  const today = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `Hypospot_Affiliate_${today}.xlsx`);
+  showToast(`Export ${rows.length} baris berhasil`);
+});
+
+// ============ DETAIL SLIDE-IN PANEL ============
+function openDetailPanel(id) {
+  const a = affiliates.find(x => x.ID === id);
+  if (!a) return;
+  currentDetailId = id;
+
+  const tier = computeTier(a.GMV);
+  const badge = a.Platform === 'Shopee' ? 'badge-shopee' : a.Platform === 'Tokopedia' ? 'badge-tokopedia' : 'badge-manual';
+  document.getElementById('detailBadge').innerHTML =
+    `<span class="text-xs px-2 py-0.5 rounded-full ${badge}">${esc(a.Platform)}</span>
+     <span class="text-xs px-2 py-0.5 rounded-full ml-1 ${tierBadgeClass(tier)}">${tierEmoji(tier)} ${tier}</span>`;
+  document.getElementById('detailNama').textContent = a.Nama || a.Username;
+  document.getElementById('detailUsername').textContent = '@' + a.Username;
+
+  document.getElementById('detailStats').innerHTML = `
+    <div class="card p-3"><div class="text-[10px] text-gray-400">GMV</div><div class="font-bold text-white">${fmtRupiah(a.GMV)}</div></div>
+    <div class="card p-3"><div class="text-[10px] text-gray-400">Terjual</div><div class="font-bold text-white">${fmtNum(a.TotalTerjual)}</div></div>
+    <div class="card p-3"><div class="text-[10px] text-gray-400">Dipromokan</div><div class="font-bold text-white">${a.TotalDipromokan === '' ? '-' : fmtNum(a.TotalDipromokan)}</div></div>
+    <div class="card p-3"><div class="text-[10px] text-gray-400">Showcase</div><div class="font-bold text-white">${a.TotalShowcase === '' ? '-' : fmtNum(a.TotalShowcase)}</div></div>
+    <div class="card p-3"><div class="text-[10px] text-gray-400">Video</div><div class="font-bold text-white">${a.TotalVideo === '' ? '-' : fmtNum(a.TotalVideo)}</div></div>
+    <div class="card p-3"><div class="text-[10px] text-gray-400">Followers</div><div class="font-bold text-white">${a.Followers === '' ? '-' : fmtNum(a.Followers)}</div></div>
+  `;
+
+  renderDetailChart(id);
+  renderDetailLogs(id);
+
+  document.getElementById('detailOverlay').classList.add('open');
+  document.getElementById('detailPanel').classList.add('open');
+}
+
+function closeDetailPanel() {
+  document.getElementById('detailOverlay').classList.remove('open');
+  document.getElementById('detailPanel').classList.remove('open');
+  currentDetailId = null;
+}
+document.getElementById('detailCloseBtn').addEventListener('click', closeDetailPanel);
+document.getElementById('detailOverlay').addEventListener('click', closeDetailPanel);
+
+function renderDetailChart(id) {
+  const series = getHistoryForId(id);
+  const chartEl = document.getElementById('detailChart');
+  const labelsEl = document.getElementById('detailChartLabels');
+  const emptyEl = document.getElementById('detailChartEmpty');
+
+  if (series.length < 2) {
+    chartEl.innerHTML = '';
+    labelsEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    return;
+  }
+  emptyEl.classList.add('hidden');
+
+  const max = Math.max(...series.map(s => Number(s.GMV) || 0), 1);
+  chartEl.innerHTML = series.map(s => {
+    const h = Math.max(2, Math.round((Number(s.GMV) || 0) / max * 88));
+    return `<div class="history-bar flex-1" style="height:${h}px" title="${esc(s.Month)}: ${fmtRupiah(s.GMV)}"></div>`;
+  }).join('');
+  labelsEl.innerHTML = series.map(s => `<div class="flex-1 text-center">${esc(s.Month.slice(5))}</div>`).join('');
+}
+
+function renderDetailLogs(id) {
+  const logs = getLogsForId(id);
+  const listEl = document.getElementById('detailLogList');
+  listEl.innerHTML = logs.length
+    ? logs.map(l => `
+      <div class="log-entry">
+        <div class="text-xs text-gray-500">${esc(l.Date)}</div>
+        <div class="text-sm text-gray-200">${esc(l.Note)}</div>
+      </div>`).join('')
+    : `<div class="text-xs text-gray-500">Belum ada riwayat aktivitas untuk affiliate ini.</div>`;
+}
+
+document.getElementById('detailAddLogBtn').addEventListener('click', async () => {
+  const note = document.getElementById('detailNewNote').value.trim();
+  if (!note || !currentDetailId) return;
+  const btn = document.getElementById('detailAddLogBtn');
+  btn.disabled = true;
+  btn.textContent = 'Menyimpan...';
+  try {
+    await jsonp({ action: 'addActivityLog', id: currentDetailId, note });
+    const today = new Date().toISOString().slice(0, 10);
+    activityLogs.push({ LogID: 'temp-' + Date.now(), AffiliateID: currentDetailId, Date: today, Note: note });
+    const aff = affiliates.find(a => a.ID === currentDetailId);
+    if (aff) { aff.FollowUp = note; aff.LastFollowUpDate = today; }
+    saveCache();
+    document.getElementById('detailNewNote').value = '';
+    renderDetailLogs(currentDetailId);
+    renderTable();
+    showToast('Aktivitas tersimpan');
+  } catch {
+    showToast('Gagal simpan aktivitas', true);
+  }
+  btn.disabled = false;
+  btn.textContent = '+ Tambah Aktivitas';
+});
+
 
 // ============ MANUAL ADD ============
 document.getElementById('m_submit').addEventListener('click', async () => {
