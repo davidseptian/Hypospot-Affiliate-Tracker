@@ -1091,24 +1091,38 @@ function parseXlsx(file) {
 }
 
 function mapShopeeRows(rows) {
-  // Detect: must have Username Affiliate + Omzet Penjualan
-  if (!rows.length || !('Username Affiliate' in rows[0])) {
+  if (!rows.length) throw new Error('File kosong atau tidak terbaca');
+
+  const first = rows[0];
+  // Format lama (ID): Username Affiliate, Nama Affiliate, Omzet Penjualan(Rp), Produk Terjual, Estimasi Komisi(Rp)
+  // Format baru (EN): Affiliate Username, Affiliate Name, Sales(Rp), Item Sold, Est.Commission(Rp)
+  const isOldFormat = 'Username Affiliate' in first;
+  const isNewFormat = 'Affiliate Username' in first;
+
+  if (!isOldFormat && !isNewFormat) {
     throw new Error('Bukan format Shopee AMS Affiliate Performance yang dikenali');
   }
-  return rows.filter(r => r['Username Affiliate']).map(r => {
-    const username = String(r['Username Affiliate']).trim();
+
+  const usernameKey = isOldFormat ? 'Username Affiliate' : 'Affiliate Username';
+  const namaKey = isOldFormat ? 'Nama Affiliate' : 'Affiliate Name';
+  const gmvKey = isOldFormat ? 'Omzet Penjualan(Rp)' : 'Sales(Rp)';
+  const terjualKey = isOldFormat ? 'Produk Terjual' : 'Item Sold';
+  const komisiKey = isOldFormat ? 'Estimasi Komisi(Rp)' : 'Est.Commission(Rp)';
+
+  return rows.filter(r => r[usernameKey]).map(r => {
+    const username = String(r[usernameKey]).trim();
     return {
       ID: 'SP-' + username,
       Platform: 'Shopee',
       Username: username,
-      Nama: String(r['Nama Affiliate'] || username).trim(),
-      GMV: parseFloat(r['Omzet Penjualan(Rp)']) || 0,
-      TotalTerjual: parseFloat(r['Produk Terjual']) || 0,
+      Nama: String(r[namaKey] || username).trim(),
+      GMV: parseFloat(r[gmvKey]) || 0,
+      TotalTerjual: parseFloat(r[terjualKey]) || 0,
       TotalDipromokan: '',
       TotalShowcase: '',
       TotalVideo: '',
       Followers: '',
-      Komisi: parseFloat(r['Estimasi Komisi(Rp)']) || 0,
+      Komisi: parseFloat(r[komisiKey]) || 0,
       Source: 'Upload'
     };
   });
