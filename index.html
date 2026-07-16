@@ -266,6 +266,15 @@
         Drag & drop atau pilih file hasil export affiliate (.csv untuk Shopee "AMS Affiliate Performance", .xlsx untuk Tokopedia "Creator List").
         Data yang sudah ada akan di-update (GMV, terjual, dll), catatan Follow Up kamu <b>tidak akan hilang</b>.
       </p>
+
+      <div class="card p-4 mb-4" style="background:#0f1115;">
+        <label class="text-sm font-semibold text-white block mb-1">📅 Periode data ini</label>
+        <p class="text-xs text-gray-500 mb-2">
+          Pilih bulan yang <b>datanya</b> ini mewakilin (bukan tanggal kamu upload). Kalau kamu lagi susulan upload data Mei, ya pilih Mei — biar tersimpan sebagai histori Mei yang benar, bukan ketimpa jadi bulan sekarang.
+        </p>
+        <input type="month" id="periodInput" class="w-full max-w-[220px]">
+      </div>
+
       <div id="dropZone" class="drop-zone rounded-xl p-10 text-center cursor-pointer">
         <div class="text-4xl mb-2">📁</div>
         <div class="text-gray-300">Klik atau drop file di sini</div>
@@ -333,7 +342,7 @@
 
     <div class="mb-5">
       <h3 class="text-sm font-semibold text-gray-300 mb-2">📈 Tren GMV Bulanan</h3>
-      <div id="detailChart" class="flex items-end gap-1 h-24 bg-[#0f1115] rounded-lg p-2"></div>
+      <div id="detailChart" class="flex items-end gap-1 h-36 bg-[#0f1115] rounded-lg p-2"></div>
       <div id="detailChartLabels" class="flex gap-1 text-[10px] text-gray-500 mt-1"></div>
       <div id="detailChartEmpty" class="hidden text-xs text-gray-500 mt-2">Belum cukup data histori (minimal 2 bulan) untuk lihat tren.</div>
     </div>
@@ -414,6 +423,20 @@ function daysAgo(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d)) return null;
   return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+// Jaga-jaga: kalau ada Month yang lolos ke-convert jadi objek Tanggal / ISO string,
+// tetap dinormalisasi jadi 'yyyy-MM' yang bersih.
+function normalizeMonthClient(m) {
+  if (!m) return '';
+  const s = String(m);
+  const match = s.match(/^(\d{4})-(\d{2})/);
+  if (match) return match[0];
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return s;
 }
 
 // ============ JSONP HELPER ============
@@ -506,7 +529,7 @@ async function loadData() {
     ]);
     if (affRes.ok) {
       affiliates = affRes.data;
-      historyData = histRes.ok ? histRes.data : [];
+      historyData = (histRes.ok ? histRes.data : []).map(h => ({ ...h, Month: normalizeMonthClient(h.Month) }));
       activityLogs = logRes.ok ? logRes.data : [];
       buildTrendMap();
       renderAll();
@@ -836,9 +859,16 @@ function renderDetailChart(id) {
   emptyEl.classList.add('hidden');
 
   const max = Math.max(...series.map(s => Number(s.GMV) || 0), 1);
+  const MAX_BAR_HEIGHT = 96; // sisakan ruang di atas buat label nominal
+
   chartEl.innerHTML = series.map(s => {
-    const h = Math.max(2, Math.round((Number(s.GMV) || 0) / max * 88));
-    return `<div class="history-bar flex-1" style="height:${h}px" title="${esc(s.Month)}: ${fmtRupiah(s.GMV)}"></div>`;
+    const gmv = Number(s.GMV) || 0;
+    const h = Math.max(2, Math.round(gmv / max * MAX_BAR_HEIGHT));
+    const shortLabel = gmv >= 1000000 ? `${(gmv / 1000000).toFixed(1)}jt` : gmv >= 1000 ? `${Math.round(gmv / 1000)}rb` : String(gmv);
+    return `<div class="flex-1 flex flex-col items-center justify-end h-full">
+      <div class="text-[9px] text-gray-400 mb-1">${shortLabel}</div>
+      <div class="history-bar w-full" style="height:${h}px" title="${esc(formatMonthLabel(s.Month))}: ${fmtRupiah(gmv)}"></div>
+    </div>`;
   }).join('');
   labelsEl.innerHTML = series.map(s => `<div class="flex-1 text-center">${esc(s.Month.slice(5))}</div>`).join('');
 }
@@ -941,6 +971,23 @@ fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 // files that share an affiliate ID just overwrites in-place (no duplicates)
 let stagedRecords = new Map();
 
+// Coba tebak periode data dari nama file, misal:
+// "..._20260601-20260630_..." (rentang tanggal) atau "..._Juni_2026" (nama bulan)
+const MONTH_NAME_TO_NUM = { januari:'01',februari:'02',maret:'03',april:'04',mei:'05',juni:'06',
+  juli:'07',agustus:'08',september:'09',oktober:'10',november:'11',desember:'12' };
+function detectPeriodFromFilename(filename) {
+  const dateRangeMatch = filename.match(/(\d{4})(\d{2})\d{2}-\d{8}/);
+  if (dateRangeMatch) return `${dateRangeMatch[1]}-${dateRangeMatch[2]}`;
+
+  const lower = filename.toLowerCase();
+  for (const [name, num] of Object.entries(MONTH_NAME_TO_NUM)) {
+    const re = new RegExp(name + '[_\\s-]+(\\d{4})');
+    const m = lower.match(re);
+    if (m) return `${m[1]}-${num}`;
+  }
+  return null;
+}
+
 async function handleFiles(fileList) {
   const files = Array.from(fileList);
   if (!files.length) return;
@@ -956,6 +1003,12 @@ async function handleFiles(fileList) {
       }
       records.forEach(r => stagedRecords.set(r.ID, r));
       parseResultEl.innerHTML += `<div class="text-green-400 mb-1">✅ ${esc(file.name)}: ${records.length} baris terbaca.</div>`;
+
+      const detected = detectPeriodFromFilename(file.name);
+      if (detected) {
+        document.getElementById('periodInput').value = detected;
+        parseResultEl.innerHTML += `<div class="text-gray-400 text-xs">📅 Periode terdeteksi dari nama file: ${esc(detected)} — cek lagi di atas, ganti kalau kurang tepat.</div>`;
+      }
     } catch (err) {
       parseResultEl.innerHTML += `<div class="text-red-400 mb-1">❌ ${esc(file.name)}: ${esc(err.message)}</div>`;
     }
@@ -1175,6 +1228,8 @@ async function uploadRecords(records, fileName) {
   const statusText = document.getElementById('uploadStatusText');
   progressWrap.classList.remove('hidden');
 
+  const period = document.getElementById('periodInput').value; // yyyy-MM pilihan user
+
   const batches = [];
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     batches.push(records.slice(i, i + BATCH_SIZE));
@@ -1184,7 +1239,7 @@ async function uploadRecords(records, fileName) {
     statusText.textContent = `Sync ${fileName}: batch ${i + 1}/${batches.length}...`;
     progressBar.style.width = Math.round(((i + 1) / batches.length) * 100) + '%';
     try {
-      await jsonpWithRetry({ action: 'bulkUpsert', data: JSON.stringify(batches[i]) });
+      await jsonpWithRetry({ action: 'bulkUpsert', data: JSON.stringify(batches[i]), period });
     } catch (err) {
       progressWrap.classList.add('hidden');
       throw new Error(`Gagal di batch ${i + 1}/${batches.length} (${err.message}). Data yang sudah ke-sync aman, tinggal klik Sync lagi untuk lanjutkan sisanya.`);
@@ -1204,6 +1259,7 @@ function showToast(msg, isError) {
 }
 
 // ============ INIT ============
+document.getElementById('periodInput').value = new Date().toISOString().slice(0, 7);
 loadData();
 </script>
 </body>
