@@ -146,6 +146,9 @@
   <div id="tab-table" class="tab-content hidden">
     <div class="card p-4 mb-4 flex flex-wrap gap-3 items-center">
       <input type="text" id="searchInput" placeholder="Cari username / nama..." class="flex-1 min-w-[200px]">
+      <select id="monthFilter">
+        <option value="">📅 Data Terbaru (Live)</option>
+      </select>
       <select id="platformFilter">
         <option value="">Semua Platform</option>
         <option value="Shopee">Shopee</option>
@@ -172,6 +175,7 @@
       <button id="exportBtn" class="text-xs px-3 py-2 rounded-lg border border-[#2a2e37] text-gray-300 hover:text-white hover:border-orange-500">📥 Export Excel</button>
       <span class="text-xs text-gray-500" id="tableCount"></span>
     </div>
+    <div id="historicalBanner" class="hidden card p-3 mb-4 text-xs text-orange-300 border-orange-500/30"></div>
     <div class="card overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
@@ -524,6 +528,7 @@ async function loadData() {
 }
 
 function renderAll() {
+  refreshMonthOptions();
   renderDashboard();
   renderTable();
 }
@@ -613,14 +618,48 @@ function renderTrendLists() {
 }
 
 // ============ FULL TABLE ============
+const MONTH_NAMES_ID = { '01':'Januari','02':'Februari','03':'Maret','04':'April','05':'Mei','06':'Juni',
+  '07':'Juli','08':'Agustus','09':'September','10':'Oktober','11':'November','12':'Desember' };
+function formatMonthLabel(monthStr) {
+  const [y, m] = String(monthStr).split('-');
+  return `${MONTH_NAMES_ID[m] || m} ${y}`;
+}
+
+function refreshMonthOptions() {
+  const sel = document.getElementById('monthFilter');
+  const currentVal = sel.value;
+  const months = Array.from(new Set(historyData.map(h => h.Month))).sort().reverse();
+  sel.innerHTML = '<option value="">📅 Data Terbaru (Live)</option>' +
+    months.map(m => `<option value="${esc(m)}">🗓️ ${esc(formatMonthLabel(m))}</option>`).join('');
+  if (months.includes(currentVal)) sel.value = currentVal;
+}
+
+// Bangun daftar affiliate "seolah-olah saat itu" dari snapshot HISTORY bulan tertentu.
+// FollowUp/LastFollowUpDate tetap ambil dari data live karena itu bukan hal yang dihistorikan per bulan.
+function getRowsForMonth(month) {
+  const liveById = new Map(affiliates.map(a => [a.ID, a]));
+  return historyData.filter(h => h.Month === month).map(h => {
+    const live = liveById.get(h.ID);
+    return {
+      ID: h.ID, Platform: h.Platform, Username: h.Username, Nama: live ? live.Nama : h.Username,
+      GMV: h.GMV, TotalTerjual: h.TotalTerjual, TotalDipromokan: h.TotalDipromokan,
+      TotalShowcase: h.TotalShowcase, TotalVideo: h.TotalVideo, Followers: h.Followers, Komisi: h.Komisi,
+      FollowUp: live ? live.FollowUp : '', LastFollowUpDate: live ? live.LastFollowUpDate : ''
+    };
+  });
+}
+
 function getFilteredSorted() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
   const platform = document.getElementById('platformFilter').value;
   const tier = document.getElementById('tierFilter').value;
   const needFollowUp = document.getElementById('needFollowUpFilter').checked;
   const sortBy = document.getElementById('sortBy').value;
+  const month = document.getElementById('monthFilter').value;
 
-  let rows = affiliates.filter(a => {
+  const source = month ? getRowsForMonth(month) : affiliates;
+
+  let rows = source.filter(a => {
     if (platform && a.Platform !== platform) return false;
     if (tier && computeTier(a.GMV) !== tier) return false;
     if (q && !(String(a.Username).toLowerCase().includes(q) || String(a.Nama).toLowerCase().includes(q))) return false;
@@ -643,6 +682,16 @@ function getFilteredSorted() {
 }
 
 function renderTable() {
+  const selectedMonth = document.getElementById('monthFilter').value;
+  const isHistorical = !!selectedMonth;
+  const banner = document.getElementById('historicalBanner');
+  if (isHistorical) {
+    banner.classList.remove('hidden');
+    banner.textContent = `📅 Menampilkan data historis bulan ${formatMonthLabel(selectedMonth)}. Angka GMV/terjual/dll sesuai kondisi bulan itu. Follow Up & tombol Hapus dinonaktifkan di mode ini — balik ke "Data Terbaru (Live)" untuk edit.`;
+  } else {
+    banner.classList.add('hidden');
+  }
+
   const rows = getFilteredSorted();
   document.getElementById('tableCount').textContent = `${rows.length} affiliate`;
   const body = document.getElementById('fullTableBody');
@@ -656,6 +705,9 @@ function renderTable() {
     const da = daysAgo(a.LastFollowUpDate);
     const followUpText = a.FollowUp ? esc(a.FollowUp) : '<span class="text-gray-600">Belum ada catatan</span>';
     const followUpMeta = da === null ? '' : `<div class="text-[10px] ${da > 30 ? 'text-red-400' : 'text-gray-500'} mt-0.5">${da} hari lalu</div>`;
+    const actionCell = isHistorical
+      ? `<span class="text-xs text-gray-600">-</span>`
+      : `<button class="delete-btn text-xs text-red-400 hover:text-red-300">Hapus</button>`;
     return `<tr class="border-b border-[#1c2029] hover:bg-[#1a1e26] row-clickable" data-id="${esc(a.ID)}">
       <td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded-full ${badge}">${esc(a.Platform)}</span></td>
       <td class="py-2 px-3 text-gray-200">${esc(a.Username)}</td>
@@ -668,9 +720,7 @@ function renderTable() {
       <td class="py-2 px-3 text-right text-gray-300">${a.TotalShowcase === '' ? '-' : fmtNum(a.TotalShowcase)}</td>
       <td class="py-2 px-3 text-right text-gray-300">${a.TotalVideo === '' ? '-' : fmtNum(a.TotalVideo)}</td>
       <td class="py-2 px-3 text-xs max-w-[160px] truncate">${followUpText}${followUpMeta}</td>
-      <td class="py-2 px-3">
-        <button class="delete-btn text-xs text-red-400 hover:text-red-300">Hapus</button>
-      </td>
+      <td class="py-2 px-3">${actionCell}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="12" class="py-6 text-center text-gray-500">Tidak ada data yang cocok.</td></tr>`;
 
@@ -701,6 +751,7 @@ function renderTable() {
   });
 }
 
+document.getElementById('monthFilter').addEventListener('change', renderTable);
 document.getElementById('searchInput').addEventListener('input', renderTable);
 document.getElementById('platformFilter').addEventListener('change', renderTable);
 document.getElementById('tierFilter').addEventListener('change', renderTable);
